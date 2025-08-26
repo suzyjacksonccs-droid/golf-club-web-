@@ -1,0 +1,280 @@
+import React, { useEffect, useState } from "react";
+
+// Golf Club Booking App
+// Single-file React component (default export). Uses Tailwind classes (no imports needed).
+// Features:
+// - LocalStorage persistence (key: 'golf_bookings')
+// - Create / Read / Update / Delete bookings
+// - Export bookings to CSV
+// - Share a booking via WhatsApp (pre-filled message)
+// - Open mailto: for quick email confirmation
+// - Responsive, clean UI ready for GitHub Pages or local use
+
+const STORAGE_KEY = "golf_bookings";
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function saveToLocal(bookings) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(bookings));
+}
+
+function loadFromLocal() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch (e) {
+    return [];
+  }
+}
+
+function formatDate(d) {
+  if (!d) return "";
+  return new Date(d).toLocaleDateString();
+}
+
+function bookingToText(b) {
+  return `Booking:\nName: ${b.full_name}\nEmail: ${b.email}\nPhone: ${b.phone}\nDate: ${b.date} ${b.time}\nPlayers: ${b.players}\nNotes: ${b.notes || "-"}`;
+}
+
+export default function App() {
+  const [bookings, setBookings] = useState([]);
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({
+    full_name: "",
+    email: "",
+    phone: "",
+    date: "",
+    time: "",
+    players: 1,
+    notes: "",
+  });
+  const [message, setMessage] = useState(null);
+
+  useEffect(() => {
+    setBookings(loadFromLocal());
+  }, []);
+
+  useEffect(() => {
+    saveToLocal(bookings);
+  }, [bookings]);
+
+  function resetForm() {
+    setForm({ full_name: "", email: "", phone: "", date: "", time: "", players: 1, notes: "" });
+    setEditing(null);
+  }
+
+  function validateEmail(email) {
+    // simple email pattern
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.full_name.trim()) return setMessage({ type: "error", text: "Full name is required." });
+    if (!validateEmail(form.email)) return setMessage({ type: "error", text: "Please enter a valid email." });
+    if (!form.phone.trim()) return setMessage({ type: "error", text: "Phone number is required." });
+    if (!form.date) return setMessage({ type: "error", text: "Please select a date." });
+    if (!form.time) return setMessage({ type: "error", text: "Please select a time." });
+
+    if (editing) {
+      const updated = bookings.map((b) => (b.id === editing ? { ...b, ...form } : b));
+      setBookings(updated);
+      setMessage({ type: "success", text: "Booking updated." });
+    } else {
+      const newBooking = { id: uid(), ...form, createdAt: new Date().toISOString() };
+      setBookings([newBooking, ...bookings]);
+      setMessage({ type: "success", text: "Booking created." });
+    }
+    resetForm();
+    setTimeout(() => setMessage(null), 3000);
+  }
+
+  function handleEdit(b) {
+    setEditing(b.id);
+    setForm({
+      full_name: b.full_name,
+      email: b.email,
+      phone: b.phone,
+      date: b.date,
+      time: b.time,
+      players: b.players,
+      notes: b.notes || "",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function handleDelete(id) {
+    if (!confirm("Delete this booking?")) return;
+    const updated = bookings.filter((b) => b.id !== id);
+    setBookings(updated);
+    setMessage({ type: "success", text: "Booking deleted." });
+    setTimeout(() => setMessage(null), 2500);
+  }
+
+  function exportCSV(items) {
+    const headers = ["id", "full_name", "email", "phone", "date", "time", "players", "notes", "createdAt"];
+    const rows = items.map((b) => headers.map((h) => `"${(b[h] ?? "").toString().replace(/"/g, '""')}"`).join(","));
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `golf_bookings_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function shareWhatsApp(booking) {
+    const text = `${bookingToText(booking)}`;
+    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, "_blank");
+  }
+
+  function sendEmail(booking) {
+    const subject = encodeURIComponent("Your Golf Booking Confirmation");
+    const body = encodeURIComponent(`Hello ${booking.full_name},\n\nThanks for booking with ${"Green Valley Golf Club"}. Here are your booking details:\n\n${bookingToText(booking)}\n\nSee you soon!`);
+    window.location.href = `mailto:${booking.email}?subject=${subject}&body=${body}`;
+  }
+
+  const filtered = bookings.filter((b) => {
+    const q = query.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      b.full_name.toLowerCase().includes(q) ||
+      (b.email || "").toLowerCase().includes(q) ||
+      (b.phone || "").toLowerCase().includes(q) ||
+      (b.date || "").toLowerCase().includes(q)
+    );
+  });
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-sky-50 p-6">
+      <div className="max-w-6xl mx-auto">
+        <header className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-3xl font-extrabold text-slate-800">Green Valley Golf Club</h1>
+            <p className="text-sm text-slate-500">Book tee times quickly — local-only, no backend required.</p>
+          </div>
+          <div className="text-right">
+            <p className="text-sm text-slate-600">LocalStorage bookings</p>
+            <p className="text-xs text-slate-400">Saved to your browser</p>
+          </div>
+        </header>
+
+        <main className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <section className="lg:col-span-1 bg-white p-6 rounded-2xl shadow">
+            <h2 className="text-xl font-semibold mb-3">{editing ? "Edit Booking" : "New Booking"}</h2>
+            {message && (
+              <div className={`mb-3 px-3 py-2 rounded ${message.type === "error" ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}>
+                {message.text}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <div>
+                <label className="block text-sm text-slate-600">Full name</label>
+                <input className="w-full mt-1 p-2 border rounded" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-600">Email</label>
+                <input type="email" className="w-full mt-1 p-2 border rounded" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-600">Phone</label>
+                <input className="w-full mt-1 p-2 border rounded" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              </div>
+
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="block text-sm text-slate-600">Date</label>
+                  <input type="date" className="w-full mt-1 p-2 border rounded" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+                </div>
+                <div style={{ width: 110 }}>
+                  <label className="block text-sm text-slate-600">Time</label>
+                  <input type="time" className="w-full mt-1 p-2 border rounded" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-600">Players</label>
+                <input type="number" min="1" max="8" className="w-28 mt-1 p-2 border rounded" value={form.players} onChange={(e) => setForm({ ...form, players: Number(e.target.value) })} />
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-600">Notes</label>
+                <textarea className="w-full mt-1 p-2 border rounded" rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+              </div>
+
+              <div className="flex gap-2">
+                <button className="px-4 py-2 bg-sky-600 text-white rounded shadow" type="submit">{editing ? "Save changes" : "Create booking"}</button>
+                <button type="button" onClick={resetForm} className="px-4 py-2 border rounded">Reset</button>
+              </div>
+            </form>
+
+            <div className="mt-6">
+              <h3 className="text-sm font-medium text-slate-600">Quick actions</h3>
+              <div className="mt-2 flex gap-2">
+                <button onClick={() => exportCSV(bookings)} className="flex-1 px-3 py-2 border rounded">Export all to CSV</button>
+                <button onClick={() => { if (bookings.length === 0) return alert('No bookings to share'); const sample = bookings[0]; shareWhatsApp(sample); }} className="px-3 py-2 border rounded">Share sample</button>
+              </div>
+            </div>
+          </section>
+
+          <section className="lg:col-span-2">
+            <div className="bg-white p-4 rounded-2xl shadow mb-4 flex items-center justify-between">
+              <div>
+                <input placeholder="Search by name, email, phone or date" value={query} onChange={(e) => setQuery(e.target.value)} className="w-96 p-2 border rounded" />
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-sm text-slate-500">{bookings.length} total</div>
+                <button className="px-3 py-2 border rounded" onClick={() => exportCSV(filtered)}>Export filtered</button>
+                <button className="px-3 py-2 bg-rose-50 text-rose-700 border rounded" onClick={() => { if (!confirm('Clear ALL bookings from this browser?')) return; localStorage.removeItem(STORAGE_KEY); setBookings([]); }}>Clear all</button>
+              </div>
+            </div>
+
+            <div className="grid gap-4">
+              {filtered.length === 0 ? (
+                <div className="text-center py-12 bg-white rounded-2xl shadow">No bookings found.</div>
+              ) : (
+                filtered.map((b) => (
+                  <div key={b.id} className="bg-white p-4 rounded-2xl shadow flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <h3 className="text-lg font-semibold">{b.full_name}</h3>
+                        <div className="text-xs text-slate-400">{formatDate(b.date)} {b.time}</div>
+                      </div>
+                      <div className="text-sm text-slate-600">{b.email} • {b.phone}</div>
+                      <div className="mt-2 text-sm text-slate-500">Players: {b.players} {b.notes ? `• ${b.notes}` : ''}</div>
+                      <div className="mt-2 text-xs text-slate-400">Created: {new Date(b.createdAt).toLocaleString()}</div>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-2">
+                      <div className="flex gap-2">
+                        <button onClick={() => handleEdit(b)} className="px-3 py-1 border rounded">Edit</button>
+                        <button onClick={() => handleDelete(b.id)} className="px-3 py-1 border rounded">Delete</button>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button onClick={() => shareWhatsApp(b)} className="px-3 py-1 bg-green-50 border rounded">WhatsApp</button>
+                        <button onClick={() => sendEmail(b)} className="px-3 py-1 bg-indigo-50 border rounded">Email</button>
+                        <button onClick={() => { navigator.clipboard?.writeText(bookingToText(b)); alert('Booking copied to clipboard'); }} className="px-3 py-1 border rounded">Copy</button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+        </main>
+
+        <footer className="text-center text-sm text-slate-500 mt-8">Made for local use · Save & share from your browser · No backend required</footer>
+      </div>
+    </div>
+  );
+}
